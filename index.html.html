@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Two Meshes, One Vector</title>
+<style>
+  :root {
+    --page:      #f3f4f6;
+    --panel:     #ffffff;
+    --line:      #dcdfe3;
+    --ink:       #14161a;
+    --ink-soft:  #545a62;
+    --ink-faint: #878d95;
+    --accent:    #c2372c;
+    --canvas-bg: #0b0d10;
+
+    --fs-title:  30px;
+    --fs-panel:  20px;
+    --fs-label:  18px;
+    --fs-body:   15px;
+    --fs-value:  30px;
+    --fs-note:   13.5px;
+  }
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; }
+  body {
+    margin: 0; padding: 18px 22px;
+    background: var(--page); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .container {
+    max-width: 1280px; width: 100%; margin: 0 auto;
+    flex: 1; display: flex; flex-direction: column; min-height: 0;
+  }
+
+  .sym { font-family: "Cambria Math", Cambria, "Times New Roman", serif; font-style: italic; }
+  sub { font-size: 0.72em; }
+
+  header {
+    flex: none; text-align: center;
+    margin-bottom: 14px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { margin: 0; font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.02em; }
+
+  .canvas-row {
+    flex: 1; min-height: 0;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 14px;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel-title {
+    flex: none; text-align: center;
+    font-size: var(--fs-panel); font-weight: 700; margin: 0 0 10px;
+    letter-spacing: -0.01em;
+  }
+  .canvas-fit {
+    flex: 1; min-height: 0; overflow: hidden; container-type: size;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    /* Sized to the shorter side of the box so the square field stays square. */
+    width: min(100cqw, 100cqh); height: min(100cqw, 100cqh);
+    background: var(--canvas-bg); border-radius: 8px; display: block;
+  }
+
+  .controls {
+    flex: none; margin-top: 16px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 16px 22px 14px;
+  }
+  .grid { display: grid; gap: 10px 22px; grid-template-columns: 210px 1fr; align-items: center; }
+
+  .row-label { font-size: var(--fs-label); font-weight: 600; }
+  .row-body  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+  input[type="range"] { flex: 1 1 260px; min-width: 200px; height: 24px; accent-color: var(--accent); }
+  input[type="number"] {
+    width: 88px; padding: 8px 6px; font: inherit; font-size: var(--fs-body);
+    border: 1px solid var(--line); border-radius: 7px; background: #fff; color: var(--ink);
+    text-align: center;
+  }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { appearance: textfield; -moz-appearance: textfield; }
+  .deg { font-size: var(--fs-body); color: var(--ink-soft); margin-left: -8px; }
+
+  .quick { display: flex; gap: 7px; flex-wrap: wrap; }
+  .preset {
+    font: inherit; font-size: var(--fs-body); padding: 8px 16px; cursor: pointer;
+    background: #fff; color: var(--ink-soft);
+    border: 1px solid var(--line); border-radius: 999px; line-height: 1.15;
+  }
+  .preset:hover { border-color: #b6bcc4; color: var(--ink); }
+  .preset.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .preset:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .val {
+    font-size: var(--fs-value); font-weight: 700; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+    margin-top: -2px;
+  }
+  .val-wrap { display: flex; align-items: baseline; gap: 7px; }
+  .val-unit { font-size: 19px; font-weight: 600; color: var(--ink-soft); }
+
+  .row-label.value-label,
+  .row-body.value-row { align-self: baseline; }
+  .row-body.value-row {
+    justify-content: space-between; align-items: baseline;
+    flex-wrap: wrap; row-gap: 6px;
+  }
+
+  .consts {
+    display: flex; flex-wrap: wrap; gap: 4px 22px;
+    font-size: var(--fs-note); color: var(--ink-faint);
+  }
+  .consts b { font-weight: 500; color: var(--ink-soft); }
+
+  .legend {
+    flex: none; text-align: center; margin: -6px 0 8px;
+    font-size: var(--fs-note); color: var(--ink-faint);
+  }
+  .legend .swatch { display: inline-block; margin: 0 2px; }
+
+  /* On a narrow or short window, drop the single-screen layout and let the page scroll. */
+  @media (max-width: 860px), (max-height: 560px) {
+    html, body { height: auto; }
+    body { overflow: auto; }
+    .container { flex: none; }
+    .canvas-row { grid-template-columns: 1fr; }
+    .canvas-fit { container-type: normal; overflow: visible; }
+    canvas { width: 100%; max-width: 560px; height: auto; aspect-ratio: 1 / 1; }
+    .grid { grid-template-columns: 1fr; gap: 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header><h1>Two Meshes, One Vector</h1></header>
+
+  <div class="canvas-row">
+    <div class="panel">
+      <h2 class="panel-title">Moir&eacute; pattern: real-space</h2>
+      <div class="legend"><span class="swatch" style="color:#ffcc33;">&mdash;</span> &Lambda; = 2&pi;/|&Delta;G|</div>
+      <div class="canvas-fit"><canvas id="realCanvas" width="520" height="520" aria-label="Superimposed meshes in real space"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2 class="panel-title">Diffraction pattern: <span class="sym">k</span>-space</h2>
+      <div class="legend"><span class="swatch" style="color:#7dd3fc;">&#9675;</span> G<sub>10</sub> &nbsp; <span class="swatch" style="color:#7dd3fc;">&#9633;</span> G&prime;<sub>10</sub> &nbsp; <span class="swatch" style="color:#ffcc33;">&rarr;</span> &Delta;G = G&prime;<sub>10</sub> &minus; G<sub>10</sub></div>
+      <div class="canvas-fit"><canvas id="fftCanvas" width="520" height="520" aria-label="Fraunhofer diffraction pattern"></canvas></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="grid">
+      <label class="row-label" for="phiSlider">Twist angle <span class="sym">&#966;</span></label>
+      <div class="row-body">
+        <input type="range" id="phiSlider" min="0" max="45" step="0.1" value="6">
+        <input type="number" id="phiInput" min="0" max="45" step="0.1" value="6.0" aria-label="Twist angle in degrees">
+        <span class="deg">&deg;</span>
+        <div class="quick">
+          <button class="preset" data-phi="0">0&deg;</button>
+          <button class="preset" data-phi="2">2&deg;</button>
+          <button class="preset" data-phi="4">4&deg;</button>
+          <button class="preset" data-phi="15">15&deg;</button>
+          <button class="preset" data-phi="36.5">36.5&deg;</button>
+          <button class="preset" data-phi="45">45&deg;</button>
+        </div>
+      </div>
+
+      <div class="row-label value-label">Moir&eacute; period <span class="sym">&Lambda;</span></div>
+      <div class="row-body value-row">
+        <span class="val-wrap"><span class="val" id="valMoirePeriod">&ndash;</span><span class="val-unit sym">d</span></span>
+        <span class="consts">
+          <span><b>Mesh spacing</b> <span class="sym">d</span> = 30 px</span>
+          <span><b>Wire thickness</b> <span class="sym">a</span> = 20 px</span>
+          <span><b>Beam radius</b> <span class="sym">w</span><sub class="sym">0</sub> = 100 px</span>
+        </span>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+
+    const SIZE = 520;
+    const FFT_SIZE = 1024;
+
+    // Open fraction of the mesh.  It fixes the zeros of the sinc envelope: with an
+    // opening of d/3 the orders m = +-3, +-6 ... vanish.
+    const WIRE_WIDTH = 20;
+    const HOLE_SIZE = 10;
+    const PITCH = WIRE_WIDTH + HOLE_SIZE;
+
+    const BEAM_RADIUS = 100;
+    const BRIGHTNESS_MULTIPLIER = 1.0;
+
+    const CROP_ZOOM = 4.8;
+    const REAL_SPACE_ZOOM = 3.2;
+    const TWO_PI = Math.PI * 2;
+    const TOTAL_CELLS = FFT_SIZE * FFT_SIZE;
+
+    // --- Geometry for the ΔG / Λ overlay ---------------------------------
+    // Canvas-pixel radius of the (1,0) diffraction order in the k-space panel,
+    // derived from the same constants sampleIntensity() uses to crop the FFT
+    // onto the canvas (see sampleIntensity: step = (FFT_SIZE/CROP_ZOOM)/SIZE).
+    const FFT_SAMPLE_STEP = (FFT_SIZE / CROP_ZOOM) / SIZE;
+    const G10_RADIUS_PX = (FFT_SIZE / PITCH) / FFT_SAMPLE_STEP;
+
+    // Canvas-pixel length of one mesh period d in the real-space panel
+    // (sampleIntensity() there is called with cropZoom = 1.0).
+    const REAL_SAMPLE_STEP = FFT_SIZE / SIZE;
+    const MESH_PERIOD_PX = (PITCH / REAL_SPACE_ZOOM) / REAL_SAMPLE_STEP;
+
+    const COLOR_G = "#7dd3fc";       // circle marker: G (fixed mesh)
+    const COLOR_GP = "#7dd3fc";      // square marker: G' (rotated mesh)
+    const COLOR_VECTOR = "#ffcc33";  // ΔG arrow / Λ scale bar (the "one vector")
+    const INSET_TRIGGER_PX = 30;     // below this separation, add a zoomed inset
+
+    // Everything below is allocated once, in initCaches().
+    let fixedMeshCache, fixedMeshExtendedCache, beamCache;
+    let fftRowRe, fftRowIm, fftColRe, fftColIm;
+    let fieldBuffer, combinedMeshExtendedBuffer;
+    let rotatedMeshBuffer, rotatedMeshExtendedBuffer;
+    let fftRe, fftIm, fftIntensity;
+    let realSampledBuffer, diffractionSampledBuffer;
+    let ctxReal, ctxFft, imgReal, imgFft;
+
+    function initCaches() {
+        fixedMeshCache = buildSquareMesh(FFT_SIZE, PITCH, HOLE_SIZE, 0);
+        fixedMeshExtendedCache = buildSquareMesh(FFT_SIZE, PITCH / REAL_SPACE_ZOOM, HOLE_SIZE / REAL_SPACE_ZOOM, 0);
+        beamCache = buildGaussianBeam(FFT_SIZE, BEAM_RADIUS);
+
+        fftRowRe = new Float32Array(FFT_SIZE);
+        fftRowIm = new Float32Array(FFT_SIZE);
+        fftColRe = new Float32Array(FFT_SIZE);
+        fftColIm = new Float32Array(FFT_SIZE);
+
+        fieldBuffer = new Float32Array(TOTAL_CELLS);
+        combinedMeshExtendedBuffer = new Float32Array(TOTAL_CELLS);
+        rotatedMeshBuffer = new Float32Array(TOTAL_CELLS);
+        rotatedMeshExtendedBuffer = new Float32Array(TOTAL_CELLS);
+        fftRe = new Float32Array(TOTAL_CELLS);
+        fftIm = new Float32Array(TOTAL_CELLS);
+        fftIntensity = new Float32Array(TOTAL_CELLS);
+        realSampledBuffer = new Float32Array(SIZE * SIZE);
+        diffractionSampledBuffer = new Float32Array(SIZE * SIZE);
+
+        ctxReal = document.getElementById("realCanvas").getContext("2d");
+        ctxFft = document.getElementById("fftCanvas").getContext("2d");
+        imgReal = ctxReal.createImageData(SIZE, SIZE);
+        imgFft = ctxFft.createImageData(SIZE, SIZE);
+        for (let i = 3; i < imgReal.data.length; i += 4) {
+            imgReal.data[i] = 255;
+            imgFft.data[i] = 255;
+        }
+    }
+
+    function fft1d(re, im) {
+        const n = re.length;
+        let j = 0;
+        for (let i = 1; i < n; i++) {
+            let bit = n >> 1;
+            while (j & bit) { j ^= bit; bit >>= 1; }
+            j ^= bit;
+            if (i < j) {
+                [re[i], re[j]] = [re[j], re[i]];
+                [im[i], im[j]] = [im[j], im[i]];
+            }
+        }
+        for (let len = 2; len <= n; len <<= 1) {
+            const angle = -TWO_PI / len;
+            const baseCos = Math.cos(angle);
+            const baseSin = Math.sin(angle);
+            for (let i = 0; i < n; i += len) {
+                let wCos = 1, wSin = 0;
+                for (let k = 0; k < len / 2; k++) {
+                    const idx1 = i + k;
+                    const idx2 = i + k + len / 2;
+                    const uRe = re[idx1], uIm = im[idx1];
+                    const vRe = re[idx2] * wCos - im[idx2] * wSin;
+                    const vIm = re[idx2] * wSin + im[idx2] * wCos;
+                    re[idx1] = uRe + vRe; im[idx1] = uIm + vIm;
+                    re[idx2] = uRe - vRe; im[idx2] = uIm - vIm;
+                    const nextCos = wCos * baseCos - wSin * baseSin;
+                    const nextSin = wCos * baseSin + wSin * baseCos;
+                    wCos = nextCos; wSin = nextSin;
+                }
+            }
+        }
+    }
+
+    // Fills `out` if one is given, otherwise returns a new array.
+    function buildSquareMesh(size, pitchValue, holeSizeValue, phiRad, out) {
+        const mask = out || new Float32Array(size * size);
+        const center = size / 2;
+        const halfHole = holeSizeValue / 2;
+        const cosPhi = Math.cos(phiRad);
+        const sinPhi = Math.sin(phiRad);
+
+        for (let y = 0; y < size; y++) {
+            const dy = y - center;
+            for (let x = 0; x < size; x++) {
+                const dx = x - center;
+                const xr = cosPhi * dx + sinPhi * dy;
+                const yr = -sinPhi * dx + cosPhi * dy;
+                const mx = ((((xr + pitchValue / 2) % pitchValue) + pitchValue) % pitchValue) - pitchValue / 2;
+                const my = ((((yr + pitchValue / 2) % pitchValue) + pitchValue) % pitchValue) - pitchValue / 2;
+                mask[y * size + x] = Math.abs(mx) <= halfHole && Math.abs(my) <= halfHole ? 1 : 0;
+            }
+        }
+        return mask;
+    }
+
+    function buildGaussianBeam(size, radius) {
+        const out = new Float32Array(size * size);
+        const center = size / 2;
+        const denom = 2 * radius * radius;
+        for (let y = 0; y < size; y++) {
+            const dy = y - center;
+            for (let x = 0; x < size; x++) {
+                const dx = x - center;
+                out[y * size + x] = Math.exp(-(dx * dx + dy * dy) / denom);
+            }
+        }
+        return out;
+    }
+
+    function fft2dRealOpt(input, size) {
+        // Scratch arrays from the cache.
+        const re = fftRe, im = fftIm;
+        re.set(input);
+        im.fill(0);
+
+        for (let y = 0; y < size; y++) {
+            const offset = y * size;
+            for (let x = 0; x < size; x++) {
+                fftRowRe[x] = re[offset + x];
+                fftRowIm[x] = im[offset + x];
+            }
+            fft1d(fftRowRe, fftRowIm);
+            for (let x = 0; x < size; x++) {
+                re[offset + x] = fftRowRe[x];
+                im[offset + x] = fftRowIm[x];
+            }
+        }
+        for (let x = 0; x < size; x++) {
+            for (let y = 0; y < size; y++) {
+                fftColRe[y] = re[y * size + x];
+                fftColIm[y] = im[y * size + x];
+            }
+            fft1d(fftColRe, fftColIm);
+            for (let y = 0; y < size; y++) {
+                re[y * size + x] = fftColRe[y];
+                im[y * size + x] = fftColIm[y];
+            }
+        }
+
+        const intensity = fftIntensity;
+        let maxValue = 0;
+        const half = size / 2;
+
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const shiftedX = (x + half) % size;
+                const shiftedY = (y + half) % size;
+                const src = y * size + x;
+                const dst = shiftedY * size + shiftedX;
+                const value = re[src] * re[src] + im[src] * im[src];
+                intensity[dst] = value;
+                if (value > maxValue) maxValue = value;
+            }
+        }
+
+        if (maxValue > 0) {
+            const invMax = 1 / maxValue;
+            for (let i = 0; i < intensity.length; i++) intensity[i] *= invMax;
+        }
+        return intensity;
+    }
+
+    // Maps a square region of the field onto the canvas.  Where the region is wider
+    // than the canvas each output pixel averages a block of the source; sampling a
+    // single point there lets the mesh period beat against the sampling grid and puts
+    // that pattern on top of the moire.
+    function sampleIntensity(intensity, size, boxSize, cropZoom, out) {
+        const sampled = out || new Float32Array(boxSize * boxSize);
+        const center = size / 2;
+        const span = size / cropZoom;
+        const step = span / boxSize;
+        const blk = Math.max(1, Math.ceil(step));
+        const inv = 1 / (blk * blk);
+        for (let py = 0; py < boxSize; py++) {
+            const sy0 = Math.floor(center + (py - boxSize / 2) * step);
+            for (let px = 0; px < boxSize; px++) {
+                const sx0 = Math.floor(center + (px - boxSize / 2) * step);
+                let acc = 0;
+                for (let j = 0; j < blk; j++) {
+                    const sy = Math.max(0, Math.min(size - 1, sy0 + j));
+                    const row = sy * size;
+                    for (let i = 0; i < blk; i++) {
+                        const sx = Math.max(0, Math.min(size - 1, sx0 + i));
+                        acc += intensity[row + sx];
+                    }
+                }
+                sampled[py * boxSize + px] = acc * inv;
+            }
+        }
+        return sampled;
+    }
+
+    // --- ΔG / Λ overlay drawing -------------------------------------------
+    // These draw directly on top of the putImageData() raster with the normal
+    // canvas 2D vector API; they add no new physics, only markers connecting
+    // points and lengths that are already implicit in the rendered pattern.
+
+    function drawArrow(ctx, x1, y1, x2, y2, color, lineWidth) {
+        const headLen = Math.max(6, lineWidth * 3);
+        const angle = Math.atan2(y2 - y1, x2 - x1);
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x2, y2);
+        ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    function drawCircleMarker(ctx, x, y, r, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, TWO_PI);
+        ctx.stroke();
+    }
+
+    function drawSquareMarker(ctx, x, y, half, color) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.6;
+        ctx.strokeRect(x - half, y - half, half * 2, half * 2);
+    }
+
+    function drawLabel(ctx, text, x, y, color, align) {
+        ctx.font = "600 14px -apple-system, \"Segoe UI\", sans-serif";
+        ctx.textAlign = align || "left";
+        ctx.textBaseline = "middle";
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = "rgba(0,0,0,0.75)";
+        ctx.strokeText(text, x, y);
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, y);
+    }
+
+    // Zoomed corner inset so G10 and G'10 stay resolvable even when phi is
+    // small enough that the two points nearly coincide at full scale.
+    function drawKSpaceInset(g10, gp10) {
+        const boxSize = 150, margin = 12;
+        const bx = SIZE - boxSize - margin, by = margin;
+        const midx = (g10.x + gp10.x) / 2, midy = (g10.y + gp10.y) / 2;
+        const dist = Math.hypot(gp10.x - g10.x, gp10.y - g10.y) || 1;
+        const zoom = Math.min(18, Math.max(3, 55 / dist));
+        const icx = bx + boxSize / 2, icy = by + boxSize / 2;
+        const toInset = (p) => ({ x: icx + (p.x - midx) * zoom, y: icy + (p.y - midy) * zoom });
+
+        ctxFft.save();
+        ctxFft.beginPath();
+        ctxFft.rect(bx, by, boxSize, boxSize);
+        ctxFft.clip();
+        ctxFft.fillStyle = "rgba(6,7,9,0.94)";
+        ctxFft.fillRect(bx, by, boxSize, boxSize);
+
+        const ig10 = toInset(g10), igp10 = toInset(gp10);
+        drawArrow(ctxFft, ig10.x, ig10.y, igp10.x, igp10.y, COLOR_VECTOR, 2.2);
+        drawCircleMarker(ctxFft, ig10.x, ig10.y, 6, COLOR_G);
+        drawSquareMarker(ctxFft, igp10.x, igp10.y, 6, COLOR_GP);
+        drawLabel(ctxFft, "ΔG", (ig10.x + igp10.x) / 2, (ig10.y + igp10.y) / 2 - 12, COLOR_VECTOR, "center");
+        ctxFft.restore();
+
+        ctxFft.save();
+        ctxFft.strokeStyle = "rgba(255,255,255,0.35)";
+        ctxFft.lineWidth = 1;
+        ctxFft.strokeRect(bx + 0.5, by + 0.5, boxSize - 1, boxSize - 1);
+        ctxFft.fillStyle = "rgba(255,255,255,0.6)";
+        ctxFft.font = "500 11px -apple-system, sans-serif";
+        ctxFft.textAlign = "left";
+        ctxFft.textBaseline = "top";
+        ctxFft.fillText("×" + zoom.toFixed(0) + " inset", bx + 6, by + 4);
+        ctxFft.restore();
+    }
+
+    // Marks G10, G'10 and the segment between them (= ΔG, Eq. 12) on the
+    // k-space panel. Both points already sit inside the rendered diffraction
+    // pattern at (p,q)=(0,0),(m,n)=(1,0) and (p,q)=(1,0),(m,n)=(0,0) of Eq. (14);
+    // nothing here moves or invents a spot, it only labels two that are drawn.
+    function drawKSpaceOverlay(phiDeg, phiRad) {
+        const cx = SIZE / 2, cy = SIZE / 2;
+        const R = G10_RADIUS_PX;
+        const g10 = { x: cx + R, y: cy };
+        const gp10 = { x: cx + R * Math.cos(phiRad), y: cy + R * Math.sin(phiRad) };
+
+        ctxFft.save();
+        drawCircleMarker(ctxFft, g10.x, g10.y, 6, COLOR_G);
+        drawLabel(ctxFft, "G₁₀", g10.x + 10, g10.y - 12, COLOR_G, "left");
+
+        if (phiDeg <= 0.05) {
+            drawLabel(ctxFft, "G₁₀ = G′₁₀  (ΔG = 0)", g10.x + 10, g10.y + 14, COLOR_VECTOR, "left");
+            ctxFft.restore();
+            return;
+        }
+
+        drawSquareMarker(ctxFft, gp10.x, gp10.y, 6, COLOR_GP);
+        drawLabel(ctxFft, "G′₁₀", gp10.x + 10, gp10.y + 14, COLOR_GP, "left");
+        drawArrow(ctxFft, g10.x, g10.y, gp10.x, gp10.y, COLOR_VECTOR, 2.4);
+
+        const midx = (g10.x + gp10.x) / 2, midy = (g10.y + gp10.y) / 2;
+        const perpAngle = Math.atan2(gp10.y - g10.y, gp10.x - g10.x) - Math.PI / 2;
+        drawLabel(ctxFft, "ΔG", midx + 16 * Math.cos(perpAngle), midy + 16 * Math.sin(perpAngle), COLOR_VECTOR, "center");
+        ctxFft.restore();
+
+        const dist = Math.hypot(gp10.x - g10.x, gp10.y - g10.y);
+        if (dist < INSET_TRIGGER_PX) drawKSpaceInset(g10, gp10);
+    }
+
+    // Draws Λ = 2π/|ΔG| as a scale bar crossing the real-space panel, at
+    // angle 90° + φ/2 from the x-axis (from [R(φ) − I]x̂), the same rotation
+    // sense buildSquareMesh() already applies to the twisted mesh.
+    function drawRealSpaceOverlay(phiDeg, phiRad, moireInD) {
+        const cx = SIZE / 2, cy = SIZE / 2;
+        ctxReal.save();
+
+        if (phiDeg <= 0.05) {
+            drawLabel(ctxReal, "Λ = ∞  (meshes coincide)", cx, 22, COLOR_VECTOR, "center");
+            ctxReal.restore();
+            return;
+        }
+
+        const angle = Math.PI / 2 + phiRad / 2;
+        const dir = { x: Math.cos(angle), y: Math.sin(angle) };
+        const rawLen = moireInD * MESH_PERIOD_PX;
+        const MAX_LEN = SIZE * 0.8;
+        const MIN_LEN = 18;
+
+        if (!Number.isFinite(rawLen) || rawLen > MAX_LEN) {
+            const half = MAX_LEN / 2;
+            ctxReal.setLineDash([6, 5]);
+            drawArrow(ctxReal, cx, cy, cx + dir.x * half, cy + dir.y * half, COLOR_VECTOR, 2);
+            drawArrow(ctxReal, cx, cy, cx - dir.x * half, cy - dir.y * half, COLOR_VECTOR, 2);
+            ctxReal.setLineDash([]);
+            drawLabel(ctxReal, "Λ = " + moireInD.toFixed(1) + " d  (off scale)", cx, 22, COLOR_VECTOR, "center");
+        } else if (rawLen < MIN_LEN) {
+            drawLabel(ctxReal, "Λ = " + moireInD.toFixed(2) + " d", cx, 22, COLOR_VECTOR, "center");
+        } else {
+            const half = rawLen / 2;
+            const p1 = { x: cx - dir.x * half, y: cy - dir.y * half };
+            const p2 = { x: cx + dir.x * half, y: cy + dir.y * half };
+            const tick = 9;
+            const perp = { x: -dir.y, y: dir.x };
+
+            ctxReal.strokeStyle = COLOR_VECTOR;
+            ctxReal.lineWidth = 2;
+            ctxReal.beginPath();
+            ctxReal.moveTo(p1.x, p1.y);
+            ctxReal.lineTo(p2.x, p2.y);
+            ctxReal.stroke();
+            [p1, p2].forEach((p) => {
+                ctxReal.beginPath();
+                ctxReal.moveTo(p.x - perp.x * tick, p.y - perp.y * tick);
+                ctxReal.lineTo(p.x + perp.x * tick, p.y + perp.y * tick);
+                ctxReal.stroke();
+            });
+
+            drawLabel(ctxReal, "Λ", p2.x + perp.x * 14, p2.y + perp.y * 14, COLOR_VECTOR, "center");
+        }
+        ctxReal.restore();
+    }
+
+    function runSimulation() {
+        const phiDeg = parseFloat(document.getElementById("phiSlider").value);
+        const phiRad = (phiDeg * Math.PI) / 180;
+
+        markPreset();
+
+        // Lambda is quoted in units of d.  Eq. (13) fixes only the ratio, and d is an
+        // arbitrary choice in this model, so the ratio is the meaningful number.
+        const moireInD = phiDeg === 0 ? Infinity : 1 / (2 * Math.sin(phiRad / 2));
+        document.getElementById("valMoirePeriod").innerText =
+            Number.isFinite(moireInD) ? moireInD.toFixed(1) : "∞";
+
+        buildSquareMesh(FFT_SIZE, PITCH, HOLE_SIZE, phiRad, rotatedMeshBuffer);
+
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            fieldBuffer[i] = fixedMeshCache[i] * rotatedMeshBuffer[i] * beamCache[i];
+        }
+
+        const diffraction = fft2dRealOpt(fieldBuffer, FFT_SIZE);
+        const diffractionData = sampleIntensity(diffraction, FFT_SIZE, SIZE, CROP_ZOOM, diffractionSampledBuffer);
+
+        buildSquareMesh(FFT_SIZE, PITCH / REAL_SPACE_ZOOM, HOLE_SIZE / REAL_SPACE_ZOOM, phiRad, rotatedMeshExtendedBuffer);
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+            combinedMeshExtendedBuffer[i] = fixedMeshExtendedCache[i] * rotatedMeshExtendedBuffer[i];
+        }
+        const realSampled = sampleIntensity(combinedMeshExtendedBuffer, FFT_SIZE, SIZE, 1.0, realSampledBuffer);
+
+        // The averaged transmittance is normalized and drawn as a grey level: at this
+        // scale the light through the pair varies smoothly across the field.
+        let realMax = 0;
+        for (let i = 0; i < realSampled.length; i++) if (realSampled[i] > realMax) realMax = realSampled[i];
+        const realInv = realMax > 0 ? 1 / realMax : 0;
+
+        for (let py = 0; py < SIZE; py++) {
+            for (let px = 0; px < SIZE; px++) {
+                const idx = py * SIZE + px;
+                const k = idx * 4;
+
+                const vR = Math.round(15 + 230 * realSampled[idx] * realInv);
+                imgReal.data[k] = vR;
+                imgReal.data[k+1] = vR;
+                imgReal.data[k+2] = vR;
+
+                const raw = diffractionData[idx];
+                const core = Math.min(1.0, raw * BRIGHTNESS_MULTIPLIER);
+
+                imgFft.data[k] = Math.floor(255 * core);
+                imgFft.data[k+1] = 0;
+                imgFft.data[k+2] = 0;
+            }
+        }
+        ctxReal.putImageData(imgReal, 0, 0);
+        ctxFft.putImageData(imgFft, 0, 0);
+
+        drawKSpaceOverlay(phiDeg, phiRad);
+        drawRealSpaceOverlay(phiDeg, phiRad, moireInD);
+    }
+
+    // One transform per animation frame, however fast the slider moves.
+    let framePending = false;
+    function scheduleRun() {
+        if (framePending) return;
+        framePending = true;
+        requestAnimationFrame(() => { framePending = false; runSimulation(); });
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+        initCaches();
+        const slider = document.getElementById("phiSlider");
+        const box = document.getElementById("phiInput");
+
+        slider.addEventListener("input", () => { box.value = parseFloat(slider.value).toFixed(1); scheduleRun(); });
+        box.addEventListener("change", () => {
+            const v = Math.min(45, Math.max(0, parseFloat(box.value) || 0));
+            box.value = v.toFixed(1); slider.value = v; scheduleRun();
+        });
+        document.querySelectorAll(".preset").forEach(btn => {
+            btn.addEventListener("click", () => {
+                slider.value = btn.dataset.phi;
+                box.value = parseFloat(btn.dataset.phi).toFixed(1);
+                scheduleRun();
+            });
+        });
+        box.value = parseFloat(slider.value).toFixed(1);
+        runSimulation();
+    });
+
+    function markPreset() {
+        const v = parseFloat(document.getElementById("phiSlider").value);
+        document.querySelectorAll(".preset").forEach(b =>
+            b.classList.toggle("on", Math.abs(parseFloat(b.dataset.phi) - v) < 0.05));
+    }
+
+</script>
+</body>
+</html>
